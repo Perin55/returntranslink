@@ -4,19 +4,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/services/network_service.dart';
 
 class MainLayout extends ConsumerWidget {
-  final Widget child;
+  final StatefulNavigationShell? navigationShell;
+  final Widget? child;
 
-  const MainLayout({super.key, required this.child});
+  const MainLayout({
+    super.key,
+    this.navigationShell,
+    this.child,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    int currentIndex = 0;
-    final location = GoRouterState.of(context).uri.path;
-
-    if (location.startsWith('/dashboard')) currentIndex = 0;
-    else if (location.startsWith('/history')) currentIndex = 1;
-    else if (location.startsWith('/activity')) currentIndex = 2;
-    else if (location.startsWith('/account')) currentIndex = 3;
+    final currentIndex = navigationShell?.currentIndex ?? 0;
 
     final isOnlineAsyncValue = ref.watch(networkServiceProvider);
     final isOnline = isOnlineAsyncValue.value ?? true;
@@ -39,7 +38,7 @@ class MainLayout extends ConsumerWidget {
                 style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
-          Expanded(child: child),
+          Expanded(child: navigationShell ?? child ?? const SizedBox.shrink()),
         ],
       ),
       bottomNavigationBar: Container(
@@ -72,16 +71,10 @@ class MainLayout extends ConsumerWidget {
                     index: 1,
                     currentIndex: currentIndex),
                 _buildNavItem(context,
-                    icon: Icons.notifications_outlined,
-                    activeIcon: Icons.notifications,
-                    label: 'Activity',
-                    index: 2,
-                    currentIndex: currentIndex),
-                _buildNavItem(context,
                     icon: Icons.person_outline,
                     activeIcon: Icons.person,
                     label: 'Account',
-                    index: 3,
+                    index: 2,
                     currentIndex: currentIndex),
               ],
             ),
@@ -103,10 +96,16 @@ class MainLayout extends ConsumerWidget {
 
     return InkWell(
       onTap: () {
-        if (index == 0) context.go('/dashboard');
-        else if (index == 1) context.go('/history');
-        else if (index == 2) context.go('/activity');
-        else if (index == 3) context.go('/account');
+        if (navigationShell != null) {
+          navigationShell!.goBranch(
+            index,
+            initialLocation: index == navigationShell!.currentIndex,
+          );
+        } else {
+          if (index == 0) context.go('/dashboard');
+          else if (index == 1) context.go('/history');
+          else if (index == 2) context.go('/account');
+        }
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(

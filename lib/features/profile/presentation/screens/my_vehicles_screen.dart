@@ -90,7 +90,7 @@ class MyVehiclesScreen extends ConsumerWidget {
                 itemCount: trucks.length,
                 itemBuilder: (context, index) {
                   final truck = trucks[index];
-                  return _buildVehicleCard(truck);
+                  return _buildVehicleCard(context, truck);
                 },
               ),
             );
@@ -100,7 +100,7 @@ class MyVehiclesScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildVehicleCard(Truck truck) {
+  Widget _buildVehicleCard(BuildContext context, Truck truck) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16.0),
       padding: const EdgeInsets.all(20),
@@ -145,7 +145,7 @@ class MyVehiclesScreen extends ConsumerWidget {
                   ),
                 ],
               ),
-              if (truck.isActive ?? false)
+              if (truck.isActive)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -165,22 +165,50 @@ class MyVehiclesScreen extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Documents Uploaded', style: TextStyle(color: Color(0xFF6B7280), fontSize: 13)),
-              Row(
-                children: const [
-                  Icon(Icons.check_circle, color: Color(0xFF10B981), size: 16),
-                  SizedBox(width: 4),
-                  Text('RC Book', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                  SizedBox(width: 8),
-                  Icon(Icons.check_circle, color: Color(0xFF10B981), size: 16),
-                  SizedBox(width: 4),
-                  Text('Insurance', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                ],
-              )
+              _buildSpecItem('Body Type', truck.bodyType ?? truck.vehicleType ?? 'Open'),
+              _buildSpecItem('Capacity', '${truck.capacity ?? '10'} Tons'),
+              _buildSpecItem('Status', truck.status.toUpperCase()),
             ],
-          )
+          ),
+          const SizedBox(height: 14),
+          InkWell(
+            onTap: () => context.push('/kyc_documents'),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: const [
+                      Icon(Icons.verified_outlined, color: Color(0xFF10B981), size: 18),
+                      SizedBox(width: 8),
+                      Text('Vehicle Documents & RC', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                    ],
+                  ),
+                  const Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF64748B)),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSpecItem(String title, String value) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 11, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(color: Color(0xFF0F172A), fontSize: 13, fontWeight: FontWeight.bold)),
+      ],
     );
   }
 }

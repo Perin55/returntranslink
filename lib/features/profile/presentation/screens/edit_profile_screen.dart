@@ -28,7 +28,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String? _existingProfileUrl;
   String? _partnerId;
 
-  final List<String> _cities = ['Ahmedabad', 'Surat', 'Rajkot', 'Vadodara'];
+  final List<String> _cities = ['Ahmedabad', 'Surat', 'Rajkot', 'Vadodara', 'Mumbai', 'Pune', 'Delhi', 'Jaipur', 'Indore', 'Nagpur', 'Bhopal', 'Hyderabad', 'Bangalore', 'Chennai', 'Kolkata', 'Lucknow', 'Kanpur', 'Patna', 'Ludhiana', 'Agra'];
 
   @override
   void initState() {
@@ -39,29 +39,54 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _fetchUserData() async {
     try {
       final user = Supabase.instance.client.auth.currentUser;
-      if (user != null) {
-        final response = await Supabase.instance.client
-            .from('partners')
-            .select()
-            .eq('auth_id', user.id)
-            .maybeSingle();
-            
-        if (response != null) {
-          _partnerId = user.id; // use auth_id
-          _nameController.text = response['full_name'] ?? response['owner_name'] ?? '';
-          _emailController.text = response['email'] ?? '';
-          _phoneController.text = response['mobile_number'] ?? '';
-          _selectedGender = response['gender'];
-          _selectedCity = response['city'];
-          _existingProfileUrl = response['profile_photo_url'] ?? response['profile_pic'];
-        }
-      }
-    } catch (e) {
-      debugPrint("Error fetching user data: $e");
-    } finally {
+      if (user == null) return;
+
+      final response = await Supabase.instance.client
+          .from('profiles')
+          .select('*, partners(*)')
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+
       setState(() {
+        _partnerId = user.id;
+        
+        if (response != null) {
+          final rawPartners = response['partners'];
+          Map<dynamic, dynamic> partner = {};
+          if (rawPartners is List && rawPartners.isNotEmpty) {
+            partner = rawPartners[0] as Map;
+          } else if (rawPartners is Map) {
+            partner = rawPartners;
+          }
+          
+          // Prefill name - profile first, fallback to partner
+          final name = response['full_name'] ?? partner['owner_name'] ?? '';
+          if (name != 'Pending') _nameController.text = name;
+          
+          // Prefill email
+          _emailController.text = response['email'] ?? partner['email'] ?? '';
+          
+          // Prefill phone - strip country code
+          final rawPhone = response['mobile_number'] ?? partner['mobile_number'] ?? user.phone ?? '';
+          _phoneController.text = rawPhone.replaceAll('+91', '').replaceAll(' ', '').trim();
+          
+          // Prefill city
+          final cityVal = response['city'] ?? partner['city'];
+          if (_cities.contains(cityVal)) _selectedCity = cityVal;
+          
+          // Profile pic
+          _existingProfileUrl = response['profile_photo_url'] ?? partner['profile_photo_url'];
+        } else {
+          // No DB record yet - at least fill phone from auth session
+          final rawPhone = user.phone ?? '';
+          _phoneController.text = rawPhone.replaceAll('+91', '').replaceAll(' ', '').trim();
+        }
+        
         _isFetching = false;
       });
+    } catch (e) {
+      debugPrint("Error fetching user data: $e");
+      setState(() => _isFetching = false);
     }
   }
 
@@ -91,7 +116,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final email = _emailController.text.trim();
     final phone = _phoneController.text.trim();
     
-    if (name.isEmpty || email.isEmpty || phone.isEmpty || _selectedGender == null || _selectedCity == null) {
+    if (name.isEmpty || email.isEmpty || phone.isEmpty || _selectedCity == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill all details')),
       );
@@ -124,14 +149,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           }
         }
         
-        await Supabase.instance.client.from('partners').update({
+        final profileResp = await Supabase.instance.client.from('profiles').upsert({
+          'auth_user_id': user.id,
           'full_name': name,
+          'mobile_number': phone,
           'email': email,
-          // Mobile number is not updated since it's the verified login number
-          'gender': _selectedGender,
           'city': _selectedCity,
           if (imageUrl != null) 'profile_photo_url': imageUrl,
-        }).eq('auth_id', user.id);
+        }, onConflict: 'auth_user_id').select().single();
+        
+        await Supabase.instance.client.from('partners').upsert({
+          'profile_id': profileResp['id'],
+          'owner_name': name,
+          'email': email,
+          'city': _selectedCity,
+          if (imageUrl != null) 'profile_photo_url': imageUrl,
+        }, onConflict: 'profile_id');
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -312,48 +345,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             ),
                           ),
                         ),
-                      ),
-                      
-                      const SizedBox(height: 24),
-
-                      // Gender
-                      const Text(
-                        'Gender',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF0A1128)),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => setState(() => _selectedGender = 'Male'),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: _selectedGender == 'Male' ? const Color(0xFFFFC107) : Colors.white,
-                                  border: Border.all(color: _selectedGender == 'Male' ? const Color(0xFFFFC107) : Colors.grey.shade300),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(child: Text('Male', style: TextStyle(fontWeight: FontWeight.bold, color: _selectedGender == 'Male' ? Colors.black : Colors.black54))),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => setState(() => _selectedGender = 'Female'),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                decoration: BoxDecoration(
-                                  color: _selectedGender == 'Female' ? const Color(0xFFFFC107) : Colors.white,
-                                  border: Border.all(color: _selectedGender == 'Female' ? const Color(0xFFFFC107) : Colors.grey.shade300),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(child: Text('Female', style: TextStyle(fontWeight: FontWeight.bold, color: _selectedGender == 'Female' ? Colors.black : Colors.black54))),
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
                       
                       const SizedBox(height: 24),

@@ -4,9 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../shared/widgets/primary_button.dart';
-import '../../../../../shared/widgets/custom_text_field.dart';
-import '../../../profile/repositories/partner_repository.dart';
-import '../../../profile/models/truck_model.dart';
 
 class AddVehicleScreen extends ConsumerStatefulWidget {
   final bool isRegistration;
@@ -325,13 +322,21 @@ class _AddVehicleScreenState extends ConsumerState<AddVehicleScreen> {
                   final uid = user!.id;
                   
                   try {
-                    final response = await Supabase.instance.client
-                        .from('partners')
-                        .select('id')
-                        .eq('auth_id', uid)
+                    final profileResp = await Supabase.instance.client
+                        .from('profiles')
+                        .select('id, partners(id)')
+                        .eq('auth_user_id', uid)
                         .maybeSingle();
 
-                    if (response == null) {
+                    final partnersRaw = profileResp?['partners'];
+                    Map<String, dynamic>? partner;
+                    if (partnersRaw is List && partnersRaw.isNotEmpty) {
+                      partner = partnersRaw[0] as Map<String, dynamic>;
+                    } else if (partnersRaw is Map) {
+                      partner = Map<String, dynamic>.from(partnersRaw);
+                    }
+
+                    if (partner == null || partner['id'] == null) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Error: Partner profile not found')),
@@ -340,27 +345,27 @@ class _AddVehicleScreenState extends ConsumerState<AddVehicleScreen> {
                       return;
                     }
                     
-                    final partnerIdStr = response['id'].toString();
+                    final partnerIdStr = partner['id'].toString();
                     
                     final existingTruck = await Supabase.instance.client
                         .from('trucks')
                         .select('id')
                         .eq('partner_id', partnerIdStr)
-                        .eq('is_active', true)
+                        .eq('operational_status', 'active')
                         .maybeSingle();
                         
+                    final truckCapacityTons = double.tryParse(_capacityController.text.trim()) ?? 0.0;
+                    final truckCapacityKg = (truckCapacityTons * 1000).toInt();
+
                     final truckData = {
                       'partner_id': partnerIdStr,
-                      'vehicle_number': vehicleNumber,
-                      'body_type': _selectedBodyType,
-                      'capacity': double.tryParse(_capacityController.text.trim()),
-                      'current_location': _currentLocationController.text.trim(),
-                      'regular_starting_location': _regularStartingLocationController.text.trim(),
-                      'regular_routes': _regularRoutesController.text.trim(),
-                      'driver_name': _driverNameController.text.trim(),
-                      'driver_mobile_number': _driverMobileController.text.trim(),
-                      'is_active': true,
-                      'status': 'Available',
+                      'truck_number': vehicleNumber,
+                      'truck_type': _selectedBodyType ?? 'Open',
+                      'body_type': _selectedBodyType ?? 'Open',
+                      'capacity_tons': truckCapacityTons,
+                      'capacity_kg': truckCapacityKg > 0 ? truckCapacityKg : 1000,
+                      'availability_status': 'available',
+                      'operational_status': 'active',
                     };
 
                     if (existingTruck != null) {
@@ -376,7 +381,7 @@ class _AddVehicleScreenState extends ConsumerState<AddVehicleScreen> {
                     
                     if (widget.isRegistration) {
                       // PRD: Move to document upload before dashboard
-                      if (context.mounted) context.push('/document_upload');
+                      if (context.mounted) context.go('/document_upload');
                     } else {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(

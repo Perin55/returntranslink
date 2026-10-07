@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../core/helpers/onboarding_helper.dart';
 import '../../../../shared/widgets/primary_button.dart';
 import '../providers/auth_provider.dart';
 
@@ -72,18 +73,17 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
       onSuccess: (String authId, String phoneNumber) async {
         if (!mounted) return;
         
-        final partner = await ref.read(partnerSyncProvider).findOrCreatePartner(
+        // Create profile/partner record if new user
+        await ref.read(partnerSyncProvider).findOrCreatePartner(
           authId: authId,
           mobileNumber: phoneNumber,
         );
         
         if (!mounted) return;
         
-        if (partner != null && partner['status'] == 'NEW') {
-          context.go('/profile_setup'); // Bypass role selection, go directly to profile setup
-        } else {
-          context.go('/dashboard'); // Go to dashboard for existing users
-        }
+        // Use OnboardingHelper to check all 3 steps
+        final route = await OnboardingHelper.getOnboardingRoute();
+        if (mounted) context.go(route);
       },
       onError: (message) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -98,7 +98,11 @@ class _OtpScreenState extends ConsumerState<OtpScreen> {
   }
 
   void _navigateByStatus(String status) {
-    context.go('/dashboard');
+    if (status == 'NEW') {
+      context.go('/profile_setup');
+    } else {
+      context.go('/dashboard');
+    }
   }
 
   void _resendOtp() {

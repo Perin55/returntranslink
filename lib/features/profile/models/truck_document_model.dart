@@ -26,29 +26,29 @@ class TruckDocument {
   factory TruckDocument.fromJson(Map<String, dynamic> json) {
     return TruckDocument(
       id: json['id'],
-      partnerId: json['partner_id'],
+      partnerId: json['partner_id'] ?? '', // Fallback, not in DB
       truckId: json['truck_id'],
       documentType: json['document_type'],
       documentNumber: json['document_number'],
       issueDate: json['issue_date'] != null ? DateTime.parse(json['issue_date']) : null,
       expiryDate: json['expiry_date'] != null ? DateTime.parse(json['expiry_date']) : null,
-      fileUrl: json['file_url'],
-      verificationStatus: json['verification_status'] ?? 'Uploaded',
-      rejectionReason: json['rejection_reason'],
+      fileUrl: json['document_url'] ?? json['file_url'],
+      verificationStatus: json['verification_status'] ?? 'pending',
+      rejectionReason: json['rejection_reason'], // Local/UI fallback
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       if (id != null) 'id': id,
-      'partner_id': partnerId,
       'truck_id': truckId,
       'document_type': documentType,
-      'document_number': documentNumber,
-      'expiry_date': expiryDate?.toIso8601String().split('T').first,
-      'file_url': fileUrl,
+      if (documentNumber != null) 'document_number': documentNumber,
+      if (issueDate != null) 'issue_date': issueDate?.toIso8601String().split('T').first,
+      if (expiryDate != null) 'expiry_date': expiryDate?.toIso8601String().split('T').first,
+      if (fileUrl != null) 'document_url': fileUrl,
       'verification_status': verificationStatus,
-      'rejection_reason': rejectionReason,
+      // partner_id, rejection_reason are omitted from DB JSON
     };
   }
 }

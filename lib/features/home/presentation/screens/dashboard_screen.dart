@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/helpers/onboarding_helper.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -35,36 +36,55 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     }
 
     try {
-      // Load partner by auth_id (stored in JWT sub claim)
-      final partnerRes = await supabase
-          .from('partners')
-          .select()
-          .eq('auth_id', user.id)
+      final pResp = await supabase
+          .from('profiles')
+          .select('id, full_name, profile_photo_url, city, partners(id, owner_name, profile_photo_url)')
+          .eq('auth_user_id', user.id)
           .maybeSingle();
 
-      if (partnerRes == null) {
-        if (mounted) setState(() => _isLoading = false);
+      final rawPartners = pResp?['partners'];
+      Map<String, dynamic>? partnerData;
+      if (rawPartners is List && rawPartners.isNotEmpty) {
+        partnerData = rawPartners[0] as Map<String, dynamic>;
+      } else if (rawPartners is Map) {
+        partnerData = Map<String, dynamic>.from(rawPartners);
+      }
+
+      if (pResp == null || partnerData == null) {
+        if (mounted) {
+          final target = await OnboardingHelper.getOnboardingRoute();
+          if (mounted && target != '/dashboard') {
+            context.go(target);
+            return;
+          }
+          setState(() => _isLoading = false);
+        }
         return;
       }
       
-      _partner = partnerRes;
-      final partnerId = partnerRes['id'];
+      // Merge: profile fields take priority, then fallback to partner fields
+      _partner = {
+        ...partnerData,
+        'full_name': pResp['full_name'] ?? partnerData['owner_name'],
+        'profile_photo_url': pResp['profile_photo_url'] ?? partnerData['profile_photo_url'],
+      };
+      final partnerId = _partner!['id'];
 
       // Load active truck
       final truckRes = await supabase
           .from('trucks')
           .select()
           .eq('partner_id', partnerId)
-          .eq('is_active', true)
+          .eq('operational_status', 'active')
           .maybeSingle();
       _truck = truckRes;
 
       // Load active return requirement
       final reqRes = await supabase
-          .from('return_requirements')
+          .from('truck_availability')
           .select()
           .eq('partner_id', partnerId)
-          .eq('status', 'ACTIVE')
+          .eq('status', 'available')
           .maybeSingle();
       _activeRequirement = reqRes;
 
@@ -98,7 +118,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final name = _partner?['full_name'] as String? ?? 'Partner';
+    final rawName = _partner?['full_name'] ?? _partner?['owner_name'] ?? 'Partner';
+    final name = (rawName == 'Pending' || rawName.isEmpty) ? 'Partner' : rawName;
     final status = _partner?['status'] as String? ?? 'NEW';
     final verified = _partner?['verification_status'] == 'APPROVED';
 
@@ -108,18 +129,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         child: RefreshIndicator(
           onRefresh: _loadData,
           color: const Color(0xFFFFC107),
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator(color: Color(0xFFFFC107)))
-              : Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 600),
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildHeader(name, verified),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600),
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(name, verified),
+                    if (_isLoading) ...[
+                      const SizedBox(height: 6),
+                      const LinearProgressIndicator(
+                        backgroundColor: Colors.transparent,
+                        color: Color(0xFFFFC107),
+                        minHeight: 2,
+                      ),
+                    ],
                           const SizedBox(height: 8),
                           if (!verified) _buildVerificationBanner(status),
                           const SizedBox(height: 24),
@@ -146,7 +173,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildHeader(String name, bool verified) {
     final hour = DateTime.now().hour;
-    final greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+    final greeting = hour < 6
+        ? 'Good Night'
+        : hour < 12
+            ? 'Good Morning'
+            : hour < 17
+                ? 'Good Afternoon'
+                : hour < 21
+                    ? 'Good Evening'
+                    : 'Good Night';
 
     return Row(
       children: [
@@ -166,7 +201,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     )
                   : null,
             ),
-            child: (_partner?['profile_photo_url'] as String?)?.isEmpty != false
+            child: (_partner?['profile_photo_url'] == null || (_partner!['profile_photo_url'] as String).isEmpty)
                 ? const Icon(Icons.person, color: Color(0xFF6B7280))
                 : null,
           ),
@@ -341,9 +376,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   Widget _buildActiveRequirementCard() {
     final req = _activeRequirement!;
-    final origin = req['origin'] as String? ?? 'Origin';
-    final destination = req['destination'] as String? ?? 'Destination';
-    final date = req['route_date'] as String?;
+    final origin = req['origin_city'] as String? ?? req['origin'] as String? ?? 'Origin';
+    final destination = req['destination_city'] as String? ?? req['destination'] as String? ?? 'Destination';
+    final date = req['available_date'] as String? ?? req['route_date'] as String?;
     final formattedDate = date != null
         ? DateFormat('dd MMM yyyy').format(DateTime.parse(date))
         : 'N/A';
@@ -416,8 +451,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildReqAction(Icons.edit_outlined, 'Edit', () => context.push('/requirement/edit')),
+              _buildReqAction(Icons.visibility_outlined, 'View', () => _showRequirementDetails(req)),
               _buildReqAction(Icons.location_on_outlined, 'Update Location', () {}),
+              _buildReqAction(Icons.delete_outline, 'Delete', () => _deleteRequirement()),
               _buildReqAction(Icons.check_circle_outline, 'Complete', () => _completeRequirement()),
             ],
           ),
@@ -446,6 +482,203 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
+  void _showRequirementDetails(Map<String, dynamic> req) {
+    final origin = req['origin_city'] as String? ?? req['origin'] as String? ?? 'N/A';
+    final destination = req['destination_city'] as String? ?? req['destination'] as String? ?? 'N/A';
+    final date = req['available_date'] as String? ?? req['route_date'] as String?;
+    final formattedDate = date != null
+        ? DateFormat('dd MMMM yyyy').format(DateTime.parse(date))
+        : 'N/A';
+    final status = req['status'] as String? ?? 'active';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Requirement Details',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    status.toUpperCase(),
+                    style: const TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.trip_origin, color: Color(0xFF10B981), size: 20),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('From (Origin)', style: TextStyle(color: Color(0xFF64748B), fontSize: 11)),
+                          Text(origin, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Divider(),
+                  ),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on, color: Color(0xFFEF4444), size: 20),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('To (Destination)', style: TextStyle(color: Color(0xFF64748B), fontSize: 11)),
+                          Text(destination, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A).withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.calendar_today, size: 18, color: Color(0xFF0F172A)),
+              ),
+              title: const Text('Available Date', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+              subtitle: Text(formattedDate, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+            ),
+            if (_truck != null) ...[
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A).withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.local_shipping, size: 18, color: Color(0xFF0F172A)),
+                ),
+                title: const Text('Assigned Vehicle', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                subtitle: Text(
+                  '${_truck!['truck_number'] ?? 'N/A'} • ${_truck!['truck_type'] ?? ''}',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F172A),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Close', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _deleteRequirement() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete Requirement?', style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to delete this requirement? It will be marked as deleted in your history.'),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No', style: TextStyle(color: Color(0xFF6B7280), fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            child: const Text('Yes', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && _activeRequirement != null) {
+      try {
+        // Mark as deleted in database so it shows as DELETED in History
+        await Supabase.instance.client
+            .from('truck_availability')
+            .update({'status': 'deleted'})
+            .eq('id', _activeRequirement!['id']);
+        await _loadData();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Requirement deleted and saved in history')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        }
+      }
+    }
+  }
+
   Future<void> _completeRequirement() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -466,8 +699,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     if (confirm == true && _activeRequirement != null) {
       try {
         await Supabase.instance.client
-            .from('return_requirements')
-            .update({'status': 'COMPLETED', 'completed_at': DateTime.now().toIso8601String()})
+            .from('truck_availability')
+            .update({'status': 'unavailable'})
             .eq('id', _activeRequirement!['id']);
         await _loadData();
       } catch (e) {
@@ -546,11 +779,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           children: [
             Expanded(child: _buildActionCard(Icons.local_shipping_outlined, 'My Truck', const Color(0xFF3B82F6), () => context.push('/my_vehicles'))),
             const SizedBox(width: 12),
-            Expanded(child: _buildActionCard(Icons.description_outlined, 'Documents', const Color(0xFF8B5CF6), () => context.push('/document_upload'))),
+            Expanded(child: _buildActionCard(Icons.description_outlined, 'Documents', const Color(0xFF8B5CF6), () => context.push('/kyc_documents'))),
             const SizedBox(width: 12),
             Expanded(child: _buildActionCard(Icons.history, 'History', const Color(0xFFF97316), () => context.go('/history'))),
             const SizedBox(width: 12),
-            Expanded(child: _buildActionCard(Icons.support_agent_outlined, 'Support', const Color(0xFF10B981), () {})),
+            Expanded(child: _buildActionCard(Icons.support_agent_outlined, 'Support', const Color(0xFF10B981), () => context.push('/support'))),
           ],
         ),
       ],
@@ -613,12 +846,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        truck['vehicle_number'] ?? 'Unknown',
+                        truck['truck_number'] ?? truck['vehicle_number'] ?? 'Unknown',
                         style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: Color(0xFF0A1128)),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${truck['vehicle_type'] ?? 'N/A'} • ${truck['body_type'] ?? 'N/A'} • ${truck['capacity'] ?? ''} ${truck['capacity_unit'] ?? 'Ton'}',
+                        '${truck['truck_type'] ?? truck['vehicle_type'] ?? 'N/A'} • ${truck['body_type'] ?? 'N/A'} • ${truck['capacity_tons'] ?? truck['capacity'] ?? ''} ${truck['capacity_unit'] ?? 'Ton'}',
                         style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
                       ),
                     ],

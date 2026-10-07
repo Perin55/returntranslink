@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../../../../shared/widgets/primary_button.dart';
 import '../../models/load_model.dart';
 import '../../repositories/driver_features_repository.dart';
-import '../../../profile/repositories/partner_repository.dart';
 
 class LoadDetailsScreen extends ConsumerWidget {
   final LoadModel load;
@@ -154,7 +152,6 @@ class LoadDetailsScreen extends ConsumerWidget {
             onPressed: () async {
               try {
                 // Find driver's active truck
-                final partnerRepo = ref.read(partnerRepositoryProvider);
                 final profileRepo = ref.read(driverFeaturesRepositoryProvider);
                 // Hardcoding truck_id as this is complex to get here without user ID directly
                 // In a real flow, we get the truck ID from the user state

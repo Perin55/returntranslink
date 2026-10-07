@@ -11,14 +11,24 @@ final currentProfileProvider = FutureProvider.autoDispose<UserProfile?>((ref) as
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return null;
 
-  final data = await Supabase.instance.client
-      .from('partners')
-      .select()
-      .eq('auth_id', user.id)
+  final profile = await Supabase.instance.client
+      .from('profiles')
+      .select('*, partners(*)')
+      .eq('auth_user_id', user.id)
       .maybeSingle();
 
-  if (data == null) return null;
-  return UserProfile.fromMap(data as Map<String, dynamic>);
+  if (profile == null) return null;
+  
+  final rawPartners = profile['partners'];
+  Map<String, dynamic> partner = {};
+  if (rawPartners is List && rawPartners.isNotEmpty) {
+    partner = rawPartners[0] as Map<String, dynamic>;
+  } else if (rawPartners is Map) {
+    partner = Map<String, dynamic>.from(rawPartners);
+  }
+  final merged = {...partner, ...profile};
+  
+  return UserProfile.fromMap(merged);
 });
 
 // ── Profile update controller ──────────────────────────────────────────────
@@ -71,10 +81,24 @@ class ProfileController extends Notifier<AsyncValue<void>> {
       if (language != null) updates['language'] = language;
       if (imageUrl != null) updates['profile_photo_url'] = imageUrl;
 
-      await Supabase.instance.client
-          .from('partners')
-          .update(updates)
-          .eq('auth_id', user.id);
+      final profileResp = await Supabase.instance.client
+          .from('profiles')
+          .update({
+            'full_name': fullName,
+            'city': city,
+            if (email != null) 'email': email,
+            if (imageUrl != null) 'profile_photo_url': imageUrl,
+          })
+          .eq('auth_user_id', user.id)
+          .select('id')
+          .maybeSingle();
+
+      if (profileResp != null) {
+        await Supabase.instance.client
+            .from('partners')
+            .update(updates)
+            .eq('profile_id', profileResp['id']);
+      }
 
       ref.invalidate(currentProfileProvider);
       this.state = const AsyncValue.data(null);

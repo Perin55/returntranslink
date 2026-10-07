@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/helpers/onboarding_helper.dart';
 
 class AccountScreen extends StatelessWidget {
   const AccountScreen({super.key});
@@ -36,7 +37,7 @@ class AccountScreen extends StatelessWidget {
                     padding: const EdgeInsets.only(left: 24, right: 24, bottom: 24, top: 16),
                     child: FutureBuilder<List<Map<String, dynamic>>>(
                       future: Supabase.instance.client.auth.currentUser != null
-                          ? Supabase.instance.client.from('partners').select().eq('auth_id', Supabase.instance.client.auth.currentUser!.id)
+                          ? Supabase.instance.client.from('profiles').select('*, partners(*)').eq('auth_user_id', Supabase.instance.client.auth.currentUser!.id)
                           : Future.value([]),
                       builder: (context, snapshot) {
                         String name = 'Loading...';
@@ -46,14 +47,24 @@ class AccountScreen extends StatelessWidget {
                         if (snapshot.connectionState == ConnectionState.waiting) {
                           name = 'Loading...';
                         } else if (Supabase.instance.client.auth.currentUser == null) {
-                          // Dev Mock User if bypassed login
                           name = 'Demo Driver';
                           mobileNumber = '+91 98765 43210';
                         } else if (snapshot.hasData && snapshot.data!.isNotEmpty) {
-                          final data = snapshot.data!.first;
-                          name = data['full_name'] ?? 'Partner';
-                          mobileNumber = data['mobile_number'] ?? '';
-                          profilePicUrl = data['profile_photo_url'];
+                          final profile = snapshot.data!.first;
+                          final rawPartners = profile['partners'];
+                          Map<String, dynamic> partner = {};
+                          if (rawPartners is List && rawPartners.isNotEmpty) {
+                            partner = rawPartners[0] as Map<String, dynamic>;
+                          } else if (rawPartners is Map) {
+                            partner = Map<String, dynamic>.from(rawPartners);
+                          }
+                          
+                          name = profile['full_name'] ?? partner['owner_name'] ?? 'Partner';
+                          
+                          final phone = profile['mobile_number'] ?? partner['mobile_number'] ?? Supabase.instance.client.auth.currentUser?.phone ?? '';
+                          mobileNumber = (phone != '') ? phone : '';
+                          
+                          profilePicUrl = profile['profile_photo_url'] ?? partner['profile_photo_url'];
                         } else {
                           name = 'Partner';
                         }
@@ -200,8 +211,10 @@ class AccountScreen extends StatelessWidget {
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        onPressed: () {
-                          context.go('/login');
+                        onPressed: () async {
+                          OnboardingHelper.resetCache();
+                          await Supabase.instance.client.auth.signOut();
+                          if (context.mounted) context.go('/login');
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFFEF2F2), // Light red bg
@@ -269,8 +282,16 @@ class AccountScreen extends StatelessWidget {
       onTap: () {
         if (title == 'Edit Profile') {
           context.push('/edit_profile');
+        } else if (title == 'KYC & Documents') {
+          context.push('/kyc_documents');
         } else if (title == 'Subscription Plan') {
           context.push('/subscription_plan');
+        } else if (title == 'Terms & Privacy Policy') {
+          context.push('/terms_privacy');
+        } else if (title == '24x7 Help & Support') {
+          context.push('/support');
+        } else if (title == 'App Language') {
+          context.push('/language');
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('$title is coming soon!')),

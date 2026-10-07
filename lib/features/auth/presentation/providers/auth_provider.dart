@@ -124,31 +124,55 @@ class PartnerSync {
     required String mobileNumber,
   }) async {
     try {
-      // 1. Look for existing partner using Supabase auth_id
-      final existing = await _supabase
-          .from('partners')
-          .select()
-          .eq('auth_id', authId)
+      final profile = await _supabase
+          .from('profiles')
+          .select('id, partners(*)')
+          .eq('auth_user_id', authId)
           .maybeSingle();
       
-      if (existing != null) {
-        return existing;
+      if (profile != null) {
+        final rawPartners = profile['partners'];
+        Map<String, dynamic>? partner;
+        if (rawPartners is List && rawPartners.isNotEmpty) {
+          partner = rawPartners[0] as Map<String, dynamic>;
+        } else if (rawPartners is Map) {
+          partner = Map<String, dynamic>.from(rawPartners);
+        }
+
+        if (partner != null) {
+           if (partner['owner_name'] == null || partner['owner_name'] == 'Pending') {
+              return {'status': 'NEW'};
+           }
+           return {'status': 'EXISTING'};
+        } else {
+           return {'status': 'NEW'};
+        }
       }
       
-      // 2. Create new partner
-      final inserted = await _supabase
-          .from('partners')
+      // Create new profile
+      final insertedProfile = await _supabase
+          .from('profiles')
           .insert({
-            'auth_id': authId, 
+            'auth_user_id': authId, 
             'mobile_number': mobileNumber,
-            'status': 'NEW',
+            'role': 'partner',
+            'full_name': 'Pending'
           })
           .select()
           .single();
+
+      // Create dummy partner
+      await _supabase
+          .from('partners')
+          .insert({
+            'profile_id': insertedProfile['id'],
+            'owner_name': 'Pending',
+            'mobile_number': mobileNumber,
+          });
       
-      return inserted;
+      return {'status': 'NEW'};
     } catch (e) {
-      print('Error finding/creating partner: $e');
+      print('Error finding/creating profile: $e');
       return null;
     }
   }
@@ -156,12 +180,25 @@ class PartnerSync {
   /// Get current partner status
   Future<String?> getPartnerStatus(String authId) async {
     try {
-      final result = await _supabase
-          .from('partners')
-          .select('status')
-          .eq('auth_id', authId)
+      final profile = await _supabase
+          .from('profiles')
+          .select('partners(owner_name)')
+          .eq('auth_user_id', authId)
           .maybeSingle();
-      return result?['status'] as String?;
+          
+      final rawPartners = profile?['partners'];
+      Map<String, dynamic>? partner;
+      if (rawPartners is List && rawPartners.isNotEmpty) {
+        partner = rawPartners[0] as Map<String, dynamic>;
+      } else if (rawPartners is Map) {
+        partner = Map<String, dynamic>.from(rawPartners);
+      }
+
+      if (partner != null) {
+         if (partner['owner_name'] == 'Pending') return 'NEW';
+         return 'EXISTING';
+      }
+      return 'NEW';
     } catch (e) {
       return null;
     }

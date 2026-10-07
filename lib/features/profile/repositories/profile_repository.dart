@@ -17,36 +17,62 @@ class ProfileRepository {
 
   Future<UserProfile?> getUserProfile(String authId) async {
     try {
-      final data = await _supabase
-          .from('partners')
-          .select()
-          .eq('auth_id', authId)
+      final profile = await _supabase
+          .from('profiles')
+          .select('*, partners(*)')
+          .eq('auth_user_id', authId)
           .maybeSingle();
-      if (data == null) return null;
-      return UserProfile.fromMap(data as Map<String, dynamic>);
+      if (profile == null) return null;
+      final rawPartners = profile['partners'];
+      Map<String, dynamic> partner = {};
+      if (rawPartners is List && rawPartners.isNotEmpty) {
+        partner = rawPartners[0] as Map<String, dynamic>;
+      } else if (rawPartners is Map) {
+        partner = Map<String, dynamic>.from(rawPartners);
+      }
+      final data = {...partner, ...profile};
+      return UserProfile.fromMap(data);
     } catch (e) {
       return null;
     }
   }
 
   Future<void> createUserProfile(UserProfile profile) async {
-    await _supabase.from('partners').insert({
-      'auth_id': profile.uid,
+    final profileResp = await _supabase.from('profiles').upsert({
+      'auth_user_id': profile.uid,
       'full_name': profile.fullName,
       'mobile_number': profile.phoneNumber,
       'city': profile.city,
-      'profile_photo_url': profile.profileImageUrl,
-      'status': 'NEW',
-    });
+      if (profile.profileImageUrl != null) 'profile_photo_url': profile.profileImageUrl,
+    }, onConflict: 'auth_user_id').select('id').maybeSingle();
+    
+    if (profileResp != null) {
+      await _supabase.from('partners').insert({
+        'profile_id': profileResp['id'],
+        'owner_name': profile.fullName,
+        'mobile_number': profile.phoneNumber,
+        'city': profile.city,
+        if (profile.profileImageUrl != null) 'profile_photo_url': profile.profileImageUrl,
+        'status': 'NEW',
+      });
+    }
   }
 
   Future<void> updateUserProfile(UserProfile profile) async {
-    await _supabase.from('partners').update({
+    final profileResp = await _supabase.from('profiles').update({
       'full_name': profile.fullName,
       'city': profile.city,
-      'profile_photo_url': profile.profileImageUrl,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('auth_id', profile.uid);
+      if (profile.profileImageUrl != null) 'profile_photo_url': profile.profileImageUrl,
+    }).eq('auth_user_id', profile.uid).select('id').maybeSingle();
+
+    if (profileResp != null) {
+      await _supabase.from('partners').update({
+        'owner_name': profile.fullName,
+        'city': profile.city,
+        if (profile.profileImageUrl != null) 'profile_photo_url': profile.profileImageUrl,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('profile_id', profileResp['id']);
+    }
   }
 
   Future<String> uploadProfileImage(String uid, File imageFile) async {

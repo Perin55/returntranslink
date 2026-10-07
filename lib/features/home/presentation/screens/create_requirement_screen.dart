@@ -84,14 +84,38 @@ class _CreateRequirementScreenState extends ConsumerState<CreateRequirementScree
     }
 
     try {
-      final partnerRes = await supabase.from('partners').select().eq('auth_id', user.id).maybeSingle();
-      if (partnerRes == null) return;
-      _partner = partnerRes;
+      final partnerRes = await supabase
+          .from('profiles')
+          .select('id, partners(id)')
+          .eq('auth_user_id', user.id)
+          .maybeSingle();
+          
+      final rawPartners = partnerRes?['partners'];
+      Map<String, dynamic>? partner;
+      if (rawPartners is List && rawPartners.isNotEmpty) {
+        partner = rawPartners[0] as Map<String, dynamic>;
+      } else if (rawPartners is Map) {
+        partner = Map<String, dynamic>.from(rawPartners);
+      }
 
-      final truckRes = await supabase.from('trucks').select().eq('partner_id', partnerRes['id']).eq('is_active', true).maybeSingle();
+      if (partner == null || partner['id'] == null) {
+        debugPrint('No partner found for user');
+        return;
+      }
+      
+      final partnerId = partner['id'];
+      if (mounted) setState(() => _partner = {'id': partnerId});
+
+      // Use partner ID (not profile ID) to find the truck
+      final truckRes = await supabase
+          .from('trucks')
+          .select()
+          .eq('partner_id', partnerId)
+          .maybeSingle();
+          
       if (mounted) setState(() => _truck = truckRes);
     } catch (e) {
-      debugPrint("Error loading truck: $e");
+      debugPrint("Error loading partner/truck: $e");
     }
   }
 
@@ -173,10 +197,10 @@ class _CreateRequirementScreenState extends ConsumerState<CreateRequirementScree
       }
 
       // 1. Cancel any existing active requirements to prevent unique constraint errors
-      await supabase.from('return_requirements')
-          .update({'status': 'CANCELLED'})
+      await supabase.from('truck_availability')
+          .update({'status': 'cancelled'})
           .eq('partner_id', _partner!['id'])
-          .eq('status', 'ACTIVE');
+          .eq('status', 'available');
 
       TimeOfDay? start;
       TimeOfDay? end;
@@ -194,39 +218,26 @@ class _CreateRequirementScreenState extends ConsumerState<CreateRequirementScree
         'destination_city': _outwardDestinationCityController.text.trim(),
         'origin_latitude': _originLat,
         'origin_longitude': _originLng,
-        'origin_accuracy': _originAccuracy,
-        'origin_timestamp': _originTimestamp?.toIso8601String(),
-        'origin_source': _locationSource,
-        'required_date': DateFormat('yyyy-MM-dd').format(_selectedDate!),
-        'time_window_start': '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}',
-        'time_window_end': '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
-        'vehicle_type': _truck?['vehicle_type'],
-        'body_type': _truck?['body_type'],
-        'capacity': _truck?['capacity'],
-        'capacity_unit': _truck?['capacity_unit'] ?? 'Ton',
-        'status': 'ACTIVE', // Outward trip is ACTIVE
-        'expires_at': _selectedDate!.add(const Duration(days: 1)).toIso8601String(),
+        'available_date': DateFormat('yyyy-MM-dd').format(_selectedDate!),
+        'available_from_time': '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}:00',
+        'available_until_time': '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}:00',
+        'status': 'unavailable', // Outward trip is being taken
       };
 
-      await supabase.from('return_requirements').insert(outwardData);
+      await supabase.from('truck_availability').insert(outwardData);
 
       final returnData = {
         'partner_id': _partner!['id'],
         'truck_id': _truck?['id'],
         'origin_city': returnOrigin.trim(),
         'destination_city': returnDest.trim(),
-        'required_date': DateFormat('yyyy-MM-dd').format(_selectedDate!.add(const Duration(days: 1))),
-        'time_window_start': '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}',
-        'time_window_end': '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
-        'vehicle_type': _truck?['vehicle_type'],
-        'body_type': _truck?['body_type'],
-        'capacity': _truck?['capacity'],
-        'capacity_unit': _truck?['capacity_unit'] ?? 'Ton',
-        'status': 'DRAFT', // Return trip is DRAFT to respect unique index
-        'expires_at': _selectedDate!.add(const Duration(days: 2)).toIso8601String(),
+        'available_date': DateFormat('yyyy-MM-dd').format(_selectedDate!.add(const Duration(days: 1))),
+        'available_from_time': '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}:00',
+        'available_until_time': '${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}:00',
+        'status': 'available', // Return trip is available
       };
 
-      await supabase.from('return_requirements').insert(returnData);
+      await supabase.from('truck_availability').insert(returnData);
 
       setState(() => _isSaving = false);
       if (mounted) {

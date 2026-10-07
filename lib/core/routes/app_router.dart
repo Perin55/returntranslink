@@ -9,15 +9,19 @@ import '../../features/registration/presentation/screens/profile_setup_screen.da
 import '../../features/registration/presentation/screens/add_vehicle_screen.dart';
 import '../../features/registration/presentation/screens/document_upload_screen.dart';
 import '../../features/registration/presentation/screens/onboarding_payment_screen.dart';
+import '../../features/registration/presentation/screens/subscription_plan_screen.dart';
 import '../../features/home/presentation/screens/dashboard_screen.dart';
 import '../../features/profile/presentation/screens/account_screen.dart';
-import '../../features/home/presentation/screens/activity_screen.dart';
 import '../../features/profile/presentation/screens/my_vehicles_screen.dart';
 import '../../features/home/presentation/screens/history_screen.dart';
-import '../../features/home/presentation/screens/earnings_screen.dart';
 import '../../features/profile/presentation/screens/edit_profile_screen.dart';
+import '../../features/profile/presentation/screens/kyc_documents_screen.dart';
+import '../../features/profile/presentation/screens/terms_privacy_screen.dart';
+import '../../features/profile/presentation/screens/support_screen.dart';
 import '../../features/home/presentation/screens/create_requirement_screen.dart';
+import '../../features/home/presentation/screens/notifications_screen.dart';
 import '../../shared/widgets/main_layout.dart';
+import '../helpers/onboarding_helper.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 final GlobalKey<NavigatorState> _shellNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'shell');
@@ -110,6 +114,26 @@ final goRouter = GoRouter(
           context: context, state: state, child: const MyVehiclesScreen()),
     ),
     GoRoute(
+      path: '/kyc_documents',
+      pageBuilder: (context, state) => buildPageWithDefaultTransition(
+          context: context, state: state, child: const KycDocumentsScreen()),
+    ),
+    GoRoute(
+      path: '/subscription_plan',
+      pageBuilder: (context, state) => buildPageWithDefaultTransition(
+          context: context, state: state, child: const SubscriptionPlanScreen()),
+    ),
+    GoRoute(
+      path: '/terms_privacy',
+      pageBuilder: (context, state) => buildPageWithDefaultTransition(
+          context: context, state: state, child: const TermsPrivacyScreen()),
+    ),
+    GoRoute(
+      path: '/support',
+      pageBuilder: (context, state) => buildPageWithDefaultTransition(
+          context: context, state: state, child: const SupportScreen()),
+    ),
+    GoRoute(
       path: '/requirement/create',
       pageBuilder: (context, state) => buildPageWithDefaultTransition(
           context: context, state: state, child: const CreateRequirementScreen()),
@@ -119,27 +143,41 @@ final goRouter = GoRouter(
       pageBuilder: (context, state) => buildPageWithDefaultTransition(
           context: context, state: state, child: const CreateRequirementScreen()),
     ),
+    GoRoute(
+      path: '/notifications',
+      pageBuilder: (context, state) => buildPageWithDefaultTransition(
+          context: context, state: state, child: const NotificationsScreen()),
+    ),
 
-    // ─── Shell (Bottom Nav) ──────────────────────────────────────────
-    ShellRoute(
-      navigatorKey: _shellNavigatorKey,
-      builder: (context, state, child) => MainLayout(child: child),
-      routes: [
-        GoRoute(
-          path: '/dashboard',
-          pageBuilder: (context, state) => const NoTransitionPage(child: DashboardScreen()),
+    // ─── Shell (Bottom Nav) — Instant IndexedStack Switching ────────
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) {
+        return MainLayout(navigationShell: navigationShell);
+      },
+      branches: [
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/dashboard',
+              pageBuilder: (context, state) => const NoTransitionPage(child: DashboardScreen()),
+            ),
+          ],
         ),
-        GoRoute(
-          path: '/history',
-          pageBuilder: (context, state) => const NoTransitionPage(child: HistoryScreen()),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/history',
+              pageBuilder: (context, state) => const NoTransitionPage(child: HistoryScreen()),
+            ),
+          ],
         ),
-        GoRoute(
-          path: '/activity',
-          pageBuilder: (context, state) => const NoTransitionPage(child: ActivityScreen()),
-        ),
-        GoRoute(
-          path: '/account',
-          pageBuilder: (context, state) => const NoTransitionPage(child: AccountScreen()),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/account',
+              pageBuilder: (context, state) => const NoTransitionPage(child: AccountScreen()),
+            ),
+          ],
         ),
       ],
     ),

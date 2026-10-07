@@ -5,9 +5,6 @@ import 'package:go_router/go_router.dart';
 
 import 'package:image_picker/image_picker.dart';
 import '../../../../../shared/widgets/primary_button.dart';
-import '../../../profile/repositories/partner_repository.dart';
-import '../../../profile/models/partner_document_model.dart';
-import '../../../profile/models/truck_document_model.dart';
 
 class DocumentUploadScreen extends ConsumerStatefulWidget {
   const DocumentUploadScreen({super.key});
@@ -34,9 +31,13 @@ class _DocumentUploadScreenState extends ConsumerState<DocumentUploadScreen> {
     final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
 
     if (pickedFile != null) {
-      // Validate the file extension to ensure it is an image
-      final ext = pickedFile.path.split('.').last.toLowerCase();
-      if (ext != 'jpg' && ext != 'jpeg' && ext != 'png' && ext != 'pdf') {
+      // In Flutter Web, pickedFile.path is often a blob URI without file extension, pickedFile.name has the actual filename
+      final fileName = pickedFile.name.isNotEmpty ? pickedFile.name : pickedFile.path;
+      final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+      
+      final validExtensions = ['jpg', 'jpeg', 'png', 'pdf', 'webp'];
+      if (ext.isNotEmpty && !validExtensions.contains(ext)) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please upload a valid Image or PDF format only')),
         );
@@ -53,7 +54,8 @@ class _DocumentUploadScreenState extends ConsumerState<DocumentUploadScreen> {
   Future<String?> _uploadToSupabase(String docName, XFile file, String uid) async {
     try {
       final bytes = await file.readAsBytes();
-      final fileExt = file.path.split('.').last;
+      final nameToUse = file.name.isNotEmpty ? file.name : file.path;
+      final fileExt = nameToUse.contains('.') ? nameToUse.split('.').last : 'jpg';
       final fileName = '${DateTime.now().millisecondsSinceEpoch}.$fileExt';
       final filePath = '$uid/$docName/$fileName';
       
@@ -84,20 +86,28 @@ class _DocumentUploadScreenState extends ConsumerState<DocumentUploadScreen> {
       final user = Supabase.instance.client.auth.currentUser;
       final uid = user!.id;
       
-      final partnerResponse = await Supabase.instance.client
-          .from('partners')
-          .select('id')
-          .eq('auth_id', uid)
+      final profileResp = await Supabase.instance.client
+          .from('profiles')
+          .select('id, partners(id)')
+          .eq('auth_user_id', uid)
           .maybeSingle();
           
-      if (partnerResponse != null && partnerResponse['id'] != null) {
-        final partnerIdStr = partnerResponse['id'].toString();
+      final partnersRaw = profileResp?['partners'];
+      Map<String, dynamic>? partner;
+      if (partnersRaw is List && partnersRaw.isNotEmpty) {
+        partner = partnersRaw[0] as Map<String, dynamic>;
+      } else if (partnersRaw is Map) {
+        partner = Map<String, dynamic>.from(partnersRaw);
+      }
+
+      if (partner != null && partner['id'] != null) {
+        final partnerIdStr = partner['id'].toString();
         
         final truckResponse = await Supabase.instance.client
             .from('trucks')
             .select('id')
             .eq('partner_id', partnerIdStr)
-            .eq('is_active', true)
+            .eq('operational_status', 'active')
             .order('created_at', ascending: false)
             .limit(1)
             .maybeSingle();
@@ -121,15 +131,17 @@ class _DocumentUploadScreenState extends ConsumerState<DocumentUploadScreen> {
           
           final fileUrl = await _uploadToSupabase(docName, file, uid);
           if (fileUrl != null) {
-            final docData = {
-              'partner_id': partnerIdStr,
-              'document_type': docName,
-              'file_url': fileUrl,
-            };
-            if (docName != 'Aadhaar' && docName != 'Driving Licence') {
-              docData['truck_id'] = truckIdStr;
+            // Insert into truck_documents
+            try {
+              await Supabase.instance.client.from('truck_documents').insert({
+                'truck_id': truckIdStr,
+                'document_type': docName,
+                'document_url': fileUrl,
+                'verification_status': 'pending',
+              });
+            } catch (e) {
+              debugPrint('truck_documents insert error: $e');
             }
-            await Supabase.instance.client.from('documents').insert(docData);
           }
         }
         

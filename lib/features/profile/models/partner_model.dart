@@ -27,7 +27,7 @@ class Partner {
     return {
       if (id != null) 'id': id,
       if (email != null) 'email': email,
-      'owner_name': 'Pending', // Added to satisfy NOT NULL constraint on partner_profiles
+      'owner_name': 'Pending', // Default required by partners table
     };
   }
 }

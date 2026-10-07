@@ -30,12 +30,22 @@ class _UpdateLocationScreenState extends State<UpdateLocationScreen> {
     setState(() => _isLoading = true);
     
     try {
-      await Supabase.instance.client
-          .from('return_requirements')
-          .update({
-            'current_location': '${_selectedLocation!.latitude},${_selectedLocation!.longitude}',
-          })
-          .eq('id', widget.requirementId);
+      final reqResp = await Supabase.instance.client
+          .from('truck_availability')
+          .select('truck_id')
+          .eq('id', widget.requirementId)
+          .maybeSingle();
+
+      if (reqResp != null && reqResp['truck_id'] != null) {
+        await Supabase.instance.client
+            .from('truck_locations')
+            .upsert({
+              'truck_id': reqResp['truck_id'],
+              'latitude': _selectedLocation!.latitude,
+              'longitude': _selectedLocation!.longitude,
+              'location_name': 'Manual Update',
+            }, onConflict: 'truck_id');
+      }
           
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -94,7 +104,8 @@ class _UpdateLocationScreenState extends State<UpdateLocationScreen> {
                 ),
                 child: const Text(
                   'Tap on the map to set your current location',
-                  style: TextStyle(color: Colors.white, textAlign: TextAlign.center),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white),
                 ),
               ),
             ),

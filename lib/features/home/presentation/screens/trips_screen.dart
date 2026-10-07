@@ -4,7 +4,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -37,13 +36,13 @@ class _TripsScreenState extends ConsumerState<TripsScreen> {
     });
     try {
       var query = Supabase.instance.client
-          .from('return_requirements')
+          .from('truck_availability')
           .select('''
             *,
-            partners!inner(id, full_name, mobile_number, whatsapp_number, profile_photo_url, verification_status),
-            trucks!inner(vehicle_number, vehicle_type, body_type, capacity, capacity_unit)
+            partners!inner(id, owner_name, mobile_number, profile_id),
+            trucks!inner(truck_number, truck_type, body_type, capacity_tons, capacity_kg)
           ''')
-          .eq('status', 'ACTIVE');
+          .eq('status', 'available');
 
       if (_fromController.text.trim().isNotEmpty) {
         query = query.ilike('origin_city', '%${_fromController.text.trim()}%');
@@ -52,7 +51,7 @@ class _TripsScreenState extends ConsumerState<TripsScreen> {
         query = query.ilike('destination_city', '%${_toController.text.trim()}%');
       }
 
-      final res = await query.order('required_date', ascending: true);
+      final res = await query.order('available_date', ascending: true);
       setState(() {
         _results = List<Map<String, dynamic>>.from(res as List);
         _isLoading = false;
@@ -85,7 +84,7 @@ class _TripsScreenState extends ConsumerState<TripsScreen> {
 
   Future<void> _whatsappPartner(Map<String, dynamic> req) async {
     final partner = req['partners'] as Map<String, dynamic>;
-    final wp = partner['whatsapp_number'] as String? ?? partner['mobile_number'] as String? ?? '';
+    final wp = partner['mobile_number'] as String? ?? '';
     final num = wp.replaceAll(RegExp(r'[^0-9]'), '');
     await _trackContact(partner['id'] as String, req['id'] as String, 'WHATSAPP');
     final uri = Uri.parse('https://wa.me/91$num');
@@ -222,11 +221,11 @@ class _TripsScreenState extends ConsumerState<TripsScreen> {
     final truck = req['trucks'] as Map<String, dynamic>? ?? {};
     final origin = req['origin_city'] as String? ?? 'N/A';
     final dest = req['destination_city'] as String? ?? 'N/A';
-    final date = req['required_date'] as String?;
+    final date = req['available_date'] as String?;
     final formattedDate = date != null
         ? DateFormat('dd MMM yyyy').format(DateTime.parse(date))
         : 'N/A';
-    final isVerified = partner['verification_status'] == 'APPROVED';
+    final isVerified = true; // Temporary mock, wait for proper join with profiles for verification status
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -262,7 +261,7 @@ class _TripsScreenState extends ConsumerState<TripsScreen> {
               const Icon(Icons.local_shipping_outlined, size: 14, color: Color(0xFF6B7280)),
               const SizedBox(width: 4),
               Text(
-                '${truck['vehicle_type'] ?? 'N/A'} • ${truck['body_type'] ?? 'N/A'} • ${truck['capacity'] ?? 'N/A'} ${truck['capacity_unit'] ?? 'Ton'}',
+                '${truck['truck_type'] ?? 'N/A'} • ${truck['body_type'] ?? 'N/A'} • ${truck['capacity_tons'] ?? 'N/A'} Ton',
                 style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
               ),
             ],
@@ -289,20 +288,16 @@ class _TripsScreenState extends ConsumerState<TripsScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: Colors.grey.shade200,
-                  image: (partner['profile_photo_url'] as String?)?.isNotEmpty == true
-                      ? DecorationImage(image: NetworkImage(partner['profile_photo_url'] as String), fit: BoxFit.cover)
-                      : null,
+                  image: null,
                 ),
-                child: (partner['profile_photo_url'] as String?)?.isEmpty != false
-                    ? const Icon(Icons.person, size: 20, color: Color(0xFF6B7280))
-                    : null,
+                child: const Icon(Icons.person, size: 20, color: Color(0xFF6B7280)),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(partner['full_name'] as String? ?? 'Partner', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    Text(partner['owner_name'] as String? ?? 'Partner', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     if (isVerified)
                       Row(
                         children: const [

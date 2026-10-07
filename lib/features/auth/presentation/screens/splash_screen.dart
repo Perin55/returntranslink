@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../../../core/helpers/onboarding_helper.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -14,32 +15,19 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 2600), () async {
-      if (mounted) {
+    Future.delayed(const Duration(milliseconds: 1800), () async {
+      if (!mounted) return;
+      try {
         final user = Supabase.instance.client.auth.currentUser;
         if (user != null) {
-          try {
-            final response = await Supabase.instance.client
-                .from('partners')
-                .select('status')
-                .eq('auth_id', user.id)
-                .maybeSingle();
-                
-            final status = response?['status'];
-            if (mounted) {
-              // If status is NEW, they haven't completed onboarding. Route them to profile setup.
-              if (status == 'NEW') {
-                context.go('/profile_setup');
-              } else {
-                context.go('/dashboard');
-              }
-            }
-          } catch (e) {
-            if (mounted) context.go('/dashboard');
-          }
+          final route = await OnboardingHelper.getOnboardingRoute();
+          if (mounted) context.go(route);
         } else {
-          context.pushReplacement('/login');
+          if (mounted) context.go('/login');
         }
+      } catch (e) {
+        debugPrint('Splash navigation error: $e');
+        if (mounted) context.go('/login');
       }
     });
   }
@@ -53,12 +41,11 @@ class _SplashScreenState extends State<SplashScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 40.0),
           child: Image.asset(
             'assets/images/logo.png',
-            width: 220, // Constrain width so it doesn't become massive
+            width: 220,
             fit: BoxFit.contain,
           ).animate()
-           .fadeIn(duration: 800.ms, curve: Curves.easeOut)
-           .scale(begin: const Offset(0.95, 0.95), end: const Offset(1.0, 1.0), duration: 800.ms, curve: Curves.easeOutCubic)
-           .shimmer(delay: 800.ms, duration: 1200.ms, color: Colors.grey.withOpacity(0.15)),
+           .fadeIn(duration: 600.ms, curve: Curves.easeOut)
+           .scale(begin: const Offset(0.95, 0.95), end: const Offset(1.0, 1.0), duration: 600.ms, curve: Curves.easeOutCubic),
         ),
       ),
     );

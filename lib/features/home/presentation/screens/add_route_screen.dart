@@ -19,7 +19,6 @@ class _AddRouteScreenState extends ConsumerState<AddRouteScreen> {
   final _originController = TextEditingController();
   final _destinationController = TextEditingController();
   final _notesController = TextEditingController();
-  final _priceController = TextEditingController();
   DateTime? _selectedDate;
   bool _isLoading = false;
 
@@ -28,7 +27,6 @@ class _AddRouteScreenState extends ConsumerState<AddRouteScreen> {
     _originController.dispose();
     _destinationController.dispose();
     _notesController.dispose();
-    _priceController.dispose();
     super.dispose();
   }
 
@@ -115,10 +113,10 @@ class _AddRouteScreenState extends ConsumerState<AddRouteScreen> {
 
         // Check for existing active route
         final existingActiveRes = await Supabase.instance.client
-            .from('return_requirements')
+            .from('truck_availability')
             .select()
             .eq('partner_id', partner.id!)
-            .eq('status', 'ACTIVE')
+            .eq('status', 'available')
             .maybeSingle();
 
         if (existingActiveRes != null) {
@@ -138,7 +136,6 @@ class _AddRouteScreenState extends ConsumerState<AddRouteScreen> {
           destination: destination,
           routeDate: _selectedDate!,
           notes: _notesController.text.trim(),
-          price: _priceController.text.trim().isNotEmpty ? double.tryParse(_priceController.text.trim()) : null,
           currentLocationLat: null,
           currentLocationLng: null,
         );
@@ -244,9 +241,6 @@ class _AddRouteScreenState extends ConsumerState<AddRouteScreen> {
                       ),
                       const SizedBox(height: 24),
                       _buildTextField('Notes (Optional)', 'Any specific load requirement?', _notesController),
-                      const SizedBox(height: 24),
-                      _buildTextField('Expected Price (Optional)', 'e.g., 5000', _priceController, isNumber: true),
-                      const SizedBox(height: 24),
                       const SizedBox(height: 24),
                     ],
                   ),
